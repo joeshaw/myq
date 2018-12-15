@@ -89,6 +89,10 @@ func stateInt(st string) int {
 
 // Session represents an authenticated session to the MyQ service.
 type Session struct {
+	Username string
+	Password string
+	Brand    string
+
 	appID string
 	token string
 }
@@ -168,17 +172,29 @@ func (s *Session) apiRequest(req *http.Request, target response) error {
 	return nil
 }
 
+func (s *Session) apiRequestWithRetry(req *http.Request, target response) error {
+	if err := s.apiRequest(req, target); err == ErrNotLoggedIn {
+		if err := s.Login(); err != nil {
+			return err
+		}
+
+		return s.apiRequest(req, target)
+	} else {
+		return err
+	}
+}
+
 // Login establishes an authenticated Session with the MyQ service
-func (s *Session) Login(username, password, brand string) error {
-	appID, ok := appIDs[brand]
+func (s *Session) Login() error {
+	appID, ok := appIDs[s.Brand]
 	if !ok {
 		return errors.New("unknown brand type")
 	}
 	s.appID = appID
 
 	data, err := json.Marshal(map[string]string{
-		"username": username,
-		"password": password,
+		"username": s.Username,
+		"password": s.Password,
 	})
 	if err != nil {
 		return err
@@ -240,7 +256,7 @@ func (s *Session) Devices() ([]Device, error) {
 		Devices []device
 	}
 
-	if err := s.apiRequest(req, &body); err != nil {
+	if err := s.apiRequestWithRetry(req, &body); err != nil {
 		return nil, err
 	}
 
@@ -291,7 +307,7 @@ func (s *Session) DeviceState(deviceID string) (string, error) {
 		AttributeValue string
 	}
 
-	if err := s.apiRequest(req, &body); err != nil {
+	if err := s.apiRequestWithRetry(req, &body); err != nil {
 		return StateUnknown, err
 	}
 
@@ -322,7 +338,7 @@ func (s *Session) SetDeviceState(deviceID string, state string) error {
 	}
 
 	var body baseResponse
-	if err := s.apiRequest(req, &body); err != nil {
+	if err := s.apiRequestWithRetry(req, &body); err != nil {
 		return err
 	}
 

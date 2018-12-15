@@ -11,12 +11,6 @@ import (
 	"github.com/joeshaw/myq"
 )
 
-type config struct {
-	username string
-	password string
-	brand    string
-}
-
 func usage() {
 	fmt.Fprintf(os.Stderr, "USAGE\n")
 	fmt.Fprintf(os.Stderr, "  %s <mode> [flags]\n", os.Args[0])
@@ -34,11 +28,11 @@ func usage() {
 }
 
 func main() {
-	var cfg config
+	s := &myq.Session{}
 
-	flag.StringVar(&cfg.username, "username", "", "MyQ username")
-	flag.StringVar(&cfg.password, "password", "", "MyQ password")
-	flag.StringVar(&cfg.brand, "brand", "liftmaster", "Equipment brand")
+	flag.StringVar(&s.Username, "username", "", "MyQ username")
+	flag.StringVar(&s.Password, "password", "", "MyQ password")
+	flag.StringVar(&s.Brand, "brand", "liftmaster", "Equipment brand")
 	flag.BoolVar(&myq.Debug, "debug", false, "debug mode")
 	flag.Usage = usage
 	flag.Parse()
@@ -49,20 +43,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	if v := os.Getenv("MYQ_USERNAME"); v != "" && cfg.username == "" {
-		cfg.username = v
+	if v := os.Getenv("MYQ_USERNAME"); v != "" && s.Username == "" {
+		s.Username = v
 	}
 
-	if v := os.Getenv("MYQ_PASSWORD"); v != "" && cfg.password == "" {
-		cfg.password = v
+	if v := os.Getenv("MYQ_PASSWORD"); v != "" && s.Password == "" {
+		s.Password = v
 	}
 
-	if cfg.username == "" {
+	if s.Username == "" {
 		fmt.Fprintf(os.Stderr, "ERROR: -username must be provided\n")
 		os.Exit(1)
 	}
 
-	if cfg.password == "" {
+	if s.Password == "" {
 		fmt.Fprintf(os.Stderr, "ERROR: -password must be provided\n")
 		os.Exit(1)
 	}
@@ -87,8 +81,7 @@ func main() {
 
 	fmt.Println("Logging into MyQ...")
 
-	s := &myq.Session{}
-	if err := s.Login(cfg.username, cfg.password, cfg.brand); err != nil {
+	if err := s.Login(); err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
 		os.Exit(1)
 	}
