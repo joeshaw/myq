@@ -87,8 +87,8 @@ func main() {
 
 	fmt.Println("Logging into MyQ...")
 
-	s, err := myq.Connect(cfg.username, cfg.password, cfg.brand)
-	if err != nil {
+	s := &myq.Session{}
+	if err := s.Login(cfg.username, cfg.password, cfg.brand); err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
 		os.Exit(1)
 	}

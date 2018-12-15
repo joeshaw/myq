@@ -83,7 +83,7 @@ func stateInt(st string) int {
 	}
 }
 
-// Session defines one or more connections to the MyQ service
+// Session represents an authenticated session to the MyQ service.
 type Session struct {
 	appID string
 	token string
@@ -134,29 +134,25 @@ func (s *Session) apiRequest(req *http.Request, target interface{}) error {
 	return json.NewDecoder(resp.Body).Decode(target)
 }
 
-// Connect establishes a new authenticated Session with the MyQ
-// service
-func Connect(username, password, brand string) (*Session, error) {
+// Login establishes an authenticated Session with the MyQ service
+func (s *Session) Login(username, password, brand string) error {
 	appID, ok := appIDs[brand]
 	if !ok {
-		return nil, errors.New("unknown brand type")
+		return errors.New("unknown brand type")
 	}
+	s.appID = appID
 
 	data, err := json.Marshal(map[string]string{
 		"username": username,
 		"password": password,
 	})
 	if err != nil {
-		return nil, err
-	}
-
-	s := &Session{
-		appID: appID,
+		return err
 	}
 
 	req, err := http.NewRequest("POST", baseURL+loginEndpoint, bytes.NewReader(data))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	var body struct {
@@ -166,15 +162,15 @@ func Connect(username, password, brand string) (*Session, error) {
 	}
 
 	if err := s.apiRequest(req, &body); err != nil {
-		return nil, err
+		return err
 	}
 
 	if body.ErrorMessage != "" {
-		return nil, errors.New(body.ErrorMessage)
+		return errors.New(body.ErrorMessage)
 	}
 
 	s.token = body.SecurityToken
-	return s, nil
+	return nil
 }
 
 // Devices returns the list of MyQ devices
