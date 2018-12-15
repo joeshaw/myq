@@ -162,7 +162,7 @@ func (s *Session) apiRequest(req *http.Request, target response) error {
 	}
 
 	switch {
-	case target.returnCode() == "-3333":
+	case target.returnCode() == "-3333", target.returnCode() == "216":
 		return ErrNotLoggedIn
 
 	case target.errorMessage() != "":
