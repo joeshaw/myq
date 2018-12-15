@@ -41,6 +41,10 @@ var (
 	// Debug indiciates whether to log HTTP responses to stderr
 	Debug = false
 
+	// ErrNotLoggedIn is returned whenever an operation is run the
+	// user has not logged in
+	ErrNotLoggedIn = errors.New("not logged in")
+
 	appIDs = map[string]string{
 		"liftmaster":  "Vj8pQggXLhLy0WHahglCD4N1nAkkXQtGYpq2HrHD7H1nvmbT55KqtN6RSF4ILB/i",
 		"chamberlain": "OA9I/hgmPHFp9RYKJqCKfwnhh28uqLJzZ9KOJf1DXoo8N2XAaVX6A1wcLYyWsnnv",
@@ -99,7 +103,25 @@ type Device struct {
 	State        string
 }
 
-func (s *Session) apiRequest(req *http.Request, target interface{}) error {
+type response interface {
+	returnCode() string
+	errorMessage() string
+}
+
+type baseResponse struct {
+	ReturnCode   string
+	ErrorMessage string
+}
+
+func (r *baseResponse) returnCode() string {
+	return r.ReturnCode
+}
+
+func (r *baseResponse) errorMessage() string {
+	return r.ErrorMessage
+}
+
+func (s *Session) apiRequest(req *http.Request, target response) error {
 	if Debug {
 		fmt.Fprintf(os.Stderr, "%s %s\n", req.Method, req.URL.String())
 	}
@@ -131,7 +153,19 @@ func (s *Session) apiRequest(req *http.Request, target interface{}) error {
 		return fmt.Errorf("received HTTP status code %d", resp.StatusCode)
 	}
 
-	return json.NewDecoder(resp.Body).Decode(target)
+	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		return err
+	}
+
+	switch {
+	case target.returnCode() == "-3333":
+		return ErrNotLoggedIn
+
+	case target.errorMessage() != "":
+		return errors.New(target.errorMessage())
+	}
+
+	return nil
 }
 
 // Login establishes an authenticated Session with the MyQ service
@@ -156,17 +190,12 @@ func (s *Session) Login(username, password, brand string) error {
 	}
 
 	var body struct {
-		ReturnCode    string
-		ErrorMessage  string
+		baseResponse
 		SecurityToken string
 	}
 
 	if err := s.apiRequest(req, &body); err != nil {
 		return err
-	}
-
-	if body.ErrorMessage != "" {
-		return errors.New(body.ErrorMessage)
 	}
 
 	s.token = body.SecurityToken
@@ -207,16 +236,12 @@ func (s *Session) Devices() ([]Device, error) {
 	}
 
 	var body struct {
-		Devices      []device
-		ErrorMessage string
+		baseResponse
+		Devices []device
 	}
 
 	if err := s.apiRequest(req, &body); err != nil {
 		return nil, err
-	}
-
-	if body.ErrorMessage != "" {
-		return nil, errors.New(body.ErrorMessage)
 	}
 
 	devices := make([]Device, len(body.Devices))
@@ -262,16 +287,12 @@ func (s *Session) DeviceState(deviceID string) (string, error) {
 	}
 
 	var body struct {
+		baseResponse
 		AttributeValue string
-		ErrorMessage   string
 	}
 
 	if err := s.apiRequest(req, &body); err != nil {
 		return StateUnknown, err
-	}
-
-	if body.ErrorMessage != "" {
-		return StateUnknown, errors.New(body.ErrorMessage)
 	}
 
 	st, _ := strconv.Atoi(body.AttributeValue)
@@ -300,16 +321,9 @@ func (s *Session) SetDeviceState(deviceID string, state string) error {
 		return err
 	}
 
-	var body struct {
-		ErrorMessage string
-	}
-
+	var body baseResponse
 	if err := s.apiRequest(req, &body); err != nil {
 		return err
-	}
-
-	if body.ErrorMessage != "" {
-		return errors.New(body.ErrorMessage)
 	}
 
 	return nil
