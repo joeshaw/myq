@@ -22,6 +22,7 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "\n")
 	fmt.Fprintf(os.Stderr, "COMMANDS\n")
 	fmt.Fprintf(os.Stderr, "  devices           Print MyQ devices\n")
+	fmt.Fprintf(os.Stderr, "  state             Print current door state for a device\n")
 	fmt.Fprintf(os.Stderr, "  open              Open device\n")
 	fmt.Fprintf(os.Stderr, "  close             Close device\n")
 	fmt.Fprintf(os.Stderr, "\n")
@@ -68,6 +69,9 @@ func main() {
 	case "devices":
 		run = runDevices
 
+	case "state":
+		run = runState
+
 	case "open":
 		run = runOpen
 
@@ -106,22 +110,48 @@ func runDevices(s *myq.Session, args []string) error {
 	}
 
 	for _, d := range devices {
-		fmt.Printf("Device ID %s\n", d.DeviceID)
-		if d.Type != "" {
-			fmt.Printf("  Type: %s\n", d.Type)
-		}
+		fmt.Printf("Device %s\n", d.SerialNumber)
 		fmt.Printf("  Name: %s\n", d.Name)
-		fmt.Printf("  Description: %s\n", d.Desc)
-		fmt.Printf("  Serial Number: %s\n", d.SerialNumber)
-		fmt.Printf("  State: %s\n", d.State)
+		fmt.Printf("  Type: %s\n", d.Type)
+		if d.DoorState != "" {
+			fmt.Printf("  Door State: %s\n", d.DoorState)
+		}
 		fmt.Println()
 	}
 
 	return nil
 }
 
-func openOrClose(s *myq.Session, deviceID string, desiredState string) error {
-	if err := s.SetDeviceState(deviceID, desiredState); err != nil {
+func runState(s *myq.Session, args []string) error {
+	if len(args) == 0 {
+		return errors.New("specify a MyQ device serial number")
+	}
+
+	serialNumber := args[0]
+
+	state, err := s.DeviceState(serialNumber)
+	if err != nil {
+		return err
+	}
+
+	if state == "" {
+		fmt.Printf("Device %s has no door state\n", serialNumber)
+	} else {
+		fmt.Printf("Device %s is %s\n", serialNumber, state)
+	}
+	return nil
+}
+
+func openOrClose(s *myq.Session, serialNumber string, action string) error {
+	var desiredState string
+	switch action {
+	case myq.ActionOpen:
+		desiredState = myq.StateOpen
+	case myq.ActionClose:
+		desiredState = myq.StateClosed
+	}
+
+	if err := s.SetDoorState(serialNumber, action); err != nil {
 		return err
 	}
 
@@ -130,7 +160,7 @@ func openOrClose(s *myq.Session, deviceID string, desiredState string) error {
 	var currentState string
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
-		state, err := s.DeviceState(deviceID)
+		state, err := s.DeviceState(serialNumber)
 		if err != nil {
 			return err
 		}
@@ -155,16 +185,16 @@ func openOrClose(s *myq.Session, deviceID string, desiredState string) error {
 
 func runOpen(s *myq.Session, args []string) error {
 	if len(args) == 0 {
-		return errors.New("specify a MyQ device ID")
+		return errors.New("specify a MyQ device serial number")
 	}
 
-	return openOrClose(s, args[0], myq.StateOpen)
+	return openOrClose(s, args[0], myq.ActionOpen)
 }
 
 func runClose(s *myq.Session, args []string) error {
 	if len(args) == 0 {
-		return errors.New("specify a MyQ device ID")
+		return errors.New("specify a MyQ device serial number")
 	}
 
-	return openOrClose(s, args[0], myq.StateClosed)
+	return openOrClose(s, args[0], myq.ActionClose)
 }

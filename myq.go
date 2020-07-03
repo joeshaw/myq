@@ -9,26 +9,28 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
-	"net/url"
 	"os"
-	"strconv"
+	"strings"
 )
 
 const (
-	baseURL = "https://myqexternal.myqdevice.com/api/v4"
+	baseURL = "https://api.myqdevice.com"
 
-	loginEndpoint              = "/User/Validate"
-	devicesEndpoint            = "/UserDeviceDetails/Get"
-	deviceGetAttributeEndpoint = "/DeviceAttribute/GetDeviceAttribute"
-	deviceSetAttributeEndpoint = "/DeviceAttribute/PutDeviceAttribute"
+	loginEndpoint       = "/api/v5/Login"
+	accountInfoEndpoint = "/api/v5/My?expand=account"
 
-	deviceTypeHub        = 1
-	deviceTypeDoorOpener = 2
-	deviceTypeGate       = 5
-	deviceTypeMyQGarage  = 7
+	// Parameter is account ID
+	devicesEndpointFmt = "/api/v5.1/Accounts/%s/Devices"
+
+	// Parameters are account ID and device serial number
+	deviceEndpointFmt        = "/api/v5.1/Accounts/%s/Devices/%s"
+	deviceActionsEndpointFmt = "/api/v5.1/Accounts/%s/Devices/%s/actions"
 )
 
 const (
+	ActionClose = "close"
+	ActionOpen  = "open"
+
 	StateUnknown = "unknown"
 	StateOpen    = "open"
 	StateClosed  = "closed"
@@ -53,58 +55,23 @@ var (
 	}
 )
 
-func stateString(st int) string {
-	switch st {
-	case 1, 9:
-		return StateOpen
-	case 2:
-		return StateClosed
-	case 3:
-		return StateStopped
-	case 4:
-		return StateOpening
-	case 5:
-		return StateClosing
-	default:
-		return StateUnknown
-	}
-}
-
-func stateInt(st string) int {
-	switch st {
-	case StateOpen:
-		return 1
-	case StateClosed:
-		return 2
-	case StateStopped:
-		return 3
-	case StateOpening:
-		return 4
-	case StateClosing:
-		return 5
-	default:
-		return 0
-	}
-}
-
 // Session represents an authenticated session to the MyQ service.
 type Session struct {
 	Username string
 	Password string
 	Brand    string
 
-	appID string
-	token string
+	appID     string
+	token     string
+	accountID string
 }
 
 // Device defines a MyQ device
 type Device struct {
-	DeviceID     string
 	SerialNumber string
 	Type         string
 	Name         string
-	Desc         string
-	State        string
+	DoorState    string
 }
 
 type response interface {
@@ -126,10 +93,6 @@ func (r *baseResponse) errorMessage() string {
 }
 
 func (s *Session) apiRequest(req *http.Request, target response) error {
-	if Debug {
-		fmt.Fprintf(os.Stderr, "%s %s\n", req.Method, req.URL.String())
-	}
-
 	if req.Body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -137,6 +100,13 @@ func (s *Session) apiRequest(req *http.Request, target response) error {
 		req.Header.Set("SecurityToken", s.token)
 	}
 	req.Header.Set("MyQApplicationId", s.appID)
+
+	if Debug {
+		fmt.Fprintf(os.Stderr, "%s %s\n", req.Method, req.URL.String())
+		d, _ := httputil.DumpRequest(req, true)
+		fmt.Fprintln(os.Stderr, string(d))
+		fmt.Fprintln(os.Stderr)
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -151,6 +121,10 @@ func (s *Session) apiRequest(req *http.Request, target response) error {
 		d, _ := httputil.DumpResponse(resp, true)
 		fmt.Fprintln(os.Stderr, string(d))
 		fmt.Fprintln(os.Stderr)
+	}
+
+	if resp.StatusCode == http.StatusNoContent {
+		return nil
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -193,8 +167,8 @@ func (s *Session) Login() error {
 	s.appID = appID
 
 	data, err := json.Marshal(map[string]string{
-		"username": s.Username,
-		"password": s.Password,
+		"Username": s.Username,
+		"Password": s.Password,
 	})
 	if err != nil {
 		return err
@@ -218,69 +192,70 @@ func (s *Session) Login() error {
 	return nil
 }
 
+func (s *Session) fillAccountID() error {
+	req, err := http.NewRequest("GET", baseURL+accountInfoEndpoint, nil)
+	if err != nil {
+		return err
+	}
+
+	var body struct {
+		baseResponse
+		Account struct {
+			ID string `json:"Id"`
+		}
+	}
+
+	if err := s.apiRequestWithRetry(req, &body); err != nil {
+		return err
+	}
+
+	if body.Account.ID == "" {
+		return errors.New("empty account ID")
+	}
+
+	s.accountID = body.Account.ID
+	return nil
+}
+
 // Devices returns the list of MyQ devices
 func (s *Session) Devices() ([]Device, error) {
+	if s.accountID == "" {
+		if err := s.fillAccountID(); err != nil {
+			return nil, err
+		}
+	}
+
+	devicesEndpoint := fmt.Sprintf(devicesEndpointFmt, s.accountID)
 	req, err := http.NewRequest("GET", baseURL+devicesEndpoint, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	type device struct {
-		MyQDeviceId           int
-		ParentMyQDeviceID     int
-		MyQDeviceTypeId       int
-		MyQDeviceTypeName     string
-		RegistrationDateTime  string
-		SerialNumber          string
-		UserName              string
-		UserCountryId         int
-		ChildrenMyQDeviceIds  string
-		UpdatedBy             string
-		UpdatedDate           string
-		ConnectServerDeviceId string
-		Attributes            []struct {
-			MyQDeviceTypeAttributeId int
-			Value                    string
-			UpdatedTime              string
-			IsDeviceProperty         bool
-			AttributeDisplayName     string
-			IsPersistent             bool
-			IsTimeSeries             bool
-			IsGlobal                 bool
-			UpdatedDate              string
-		}
+	type item struct {
+		SerialNumber string `json:"serial_number"`
+		DeviceType   string `json:"device_type"`
+		Name         string `json:"name"`
+		State        struct {
+			DoorState string `json:"door_state"`
+		} `json:"state"`
 	}
 
 	var body struct {
 		baseResponse
-		Devices []device
+		Items []item `json:"items"`
 	}
 
 	if err := s.apiRequestWithRetry(req, &body); err != nil {
 		return nil, err
 	}
 
-	devices := make([]Device, len(body.Devices))
-	for i := 0; i < len(body.Devices); i++ {
+	devices := make([]Device, len(body.Items))
+	for i := range body.Items {
 		devices[i] = Device{
-			DeviceID:     fmt.Sprint(body.Devices[i].MyQDeviceId),
-			SerialNumber: body.Devices[i].SerialNumber,
-			Type:         body.Devices[i].MyQDeviceTypeName,
-			State:        StateUnknown,
-		}
-
-		for _, attr := range body.Devices[i].Attributes {
-			switch attr.AttributeDisplayName {
-			case "name":
-				devices[i].Name = attr.Value
-
-			case "desc":
-				devices[i].Desc = attr.Value
-
-			case "doorstate":
-				st, _ := strconv.Atoi(attr.Value)
-				devices[i].State = stateString(st)
-			}
+			SerialNumber: body.Items[i].SerialNumber,
+			Type:         body.Items[i].DeviceType,
+			Name:         body.Items[i].Name,
+			DoorState:    body.Items[i].State.DoorState,
 		}
 	}
 
@@ -288,56 +263,57 @@ func (s *Session) Devices() ([]Device, error) {
 }
 
 // DeviceState returns the device state (open, closed, etc.) for the
-// provided device ID
-func (s *Session) DeviceState(deviceID string) (string, error) {
-	v := url.Values{}
-	v.Set("AttributeName", "doorstate")
-	v.Set("MyQDeviceId", deviceID)
+// provided device serial number
+func (s *Session) DeviceState(serialNumber string) (string, error) {
+	if s.accountID == "" {
+		if err := s.fillAccountID(); err != nil {
+			return "", err
+		}
+	}
 
-	u, _ := url.Parse(baseURL + deviceGetAttributeEndpoint)
-	u.RawQuery = v.Encode()
-
-	req, err := http.NewRequest("GET", u.String(), nil)
+	deviceEndpoint := fmt.Sprintf(deviceEndpointFmt, s.accountID, serialNumber)
+	req, err := http.NewRequest("GET", baseURL+deviceEndpoint, nil)
 	if err != nil {
-		return StateUnknown, err
+		return "", err
 	}
 
 	var body struct {
 		baseResponse
-		AttributeValue string
+		SerialNumber string `json:"serial_number"`
+		DeviceType   string `json:"device_type"`
+		Name         string `json:"name"`
+		State        struct {
+			DoorState string `json:"door_state"`
+		} `json:"state"`
 	}
 
 	if err := s.apiRequestWithRetry(req, &body); err != nil {
-		return StateUnknown, err
+		return "", err
 	}
 
-	st, _ := strconv.Atoi(body.AttributeValue)
-	return stateString(st), nil
+	return body.State.DoorState, nil
 }
 
-// SetDeviceState sets the device state (open or closed) for the
-// provided device ID
-func (s *Session) SetDeviceState(deviceID string, state string) error {
-	st := stateInt(state)
-	if st == 0 {
-		return fmt.Errorf("invalid state %s", state)
+// SetDoorState sets the target door state (open or closed) for the
+// provided device serial number
+func (s *Session) SetDoorState(serialNumber string, action string) error {
+	if s.accountID == "" {
+		if err := s.fillAccountID(); err != nil {
+			return err
+		}
 	}
 
-	data, err := json.Marshal(map[string]string{
-		"AttributeName":  "desireddoorstate",
-		"MyQDeviceId":    deviceID,
-		"AttributeValue": fmt.Sprint(st),
-	})
+	deviceActionsEndpoint := fmt.Sprintf(deviceActionsEndpointFmt, s.accountID, serialNumber)
+	data := fmt.Sprintf(`{"action_type":"%s"}`, action)
+	req, err := http.NewRequest("PUT", baseURL+deviceActionsEndpoint, strings.NewReader(data))
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequest("PUT", baseURL+deviceSetAttributeEndpoint, bytes.NewReader(data))
-	if err != nil {
-		return err
+	var body struct {
+		baseResponse
 	}
 
-	var body baseResponse
 	if err := s.apiRequestWithRetry(req, &body); err != nil {
 		return err
 	}
