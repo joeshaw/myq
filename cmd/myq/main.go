@@ -33,7 +33,6 @@ func main() {
 
 	flag.StringVar(&s.Username, "username", "", "MyQ username")
 	flag.StringVar(&s.Password, "password", "", "MyQ password")
-	flag.StringVar(&s.Brand, "brand", "liftmaster", "Equipment brand")
 	flag.BoolVar(&myq.Debug, "debug", false, "debug mode")
 	flag.Usage = usage
 	flag.Parse()
@@ -111,8 +110,8 @@ func runDevices(s *myq.Session, args []string) error {
 
 	for _, d := range devices {
 		fmt.Printf("Device %s\n", d.SerialNumber)
+		fmt.Printf("  Account: %s\n", d.Account.Name)
 		fmt.Printf("  Name: %s\n", d.Name)
-		fmt.Printf("  Type: %s\n", d.Type)
 		if d.DoorState != "" {
 			fmt.Printf("  Door State: %s\n", d.DoorState)
 		}

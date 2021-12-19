@@ -12,7 +12,7 @@ garage doors and gates.
 
 The `myq` tool can be installed with:
 
-    go get github.com/joeshaw/myq/cmd/myq
+    go install github.com/joeshaw/myq/cmd/myq@latest
 
 Run `myq` by itself to see full usage information.
 
@@ -45,6 +45,9 @@ https://github.com/arraylabs/pymyq
 
 J. Nunn has a Python implementation that ties in with Amazon Alexa:
 https://github.com/jbnunn/Alexa-MyQGarage
+
+HJD has a JavaScript implementation:
+https://github.com/hjdhjd/myq
 
 ## Contributing
 
