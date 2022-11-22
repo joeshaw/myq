@@ -32,8 +32,6 @@ const (
 	StateOpen    = "open"
 	StateClosed  = "closed"
 	StateStopped = "stopped"
-	StateOpening = "opening"
-	StateClosing = "closing"
 )
 
 var (
