@@ -2,6 +2,8 @@
 
 [![GoDoc](https://godoc.org/github.com/joeshaw/myq?status.svg)](http://godoc.org/github.com/joeshaw/myq)
 
+**This project is now archived, see [Status](#status) below.**
+
 `myq` is a Go package and command-line tool providing access to
 the Liftmaster / Chamberlain MyQ API.
 
@@ -49,14 +51,15 @@ https://github.com/jbnunn/Alexa-MyQGarage
 HJD has a JavaScript implementation:
 https://github.com/hjdhjd/myq
 
-## Contributing
+## Status
 
-Issues and pull requests are welcome.  When filing a PR, please make
-sure the code has been run through `gofmt`.
+In October and November 2023, MyQ made their API much harder to access by third parties.  See [this article on The Verge](https://www.theverge.com/23949612/chamberlain-myq-smart-garage-door-controller-homebridge-integrations) for more details.
+
+I've replaced my MyQ Wifi module with a [Ratgdo](https://paulwieland.github.io/ratgdo/), which I strongly recommend.  As a result, I am no longer maintaining this project.
 
 ## License
 
-Copyright 2018 Joe Shaw
+Copyright 2018-2022 Joe Shaw
 
 `myq` is licensed under the MIT License.  See the LICENSE file
 for details.
